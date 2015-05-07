@@ -1,0 +1,60 @@
+<html>
+<head>
+<title>Simple Auction House</title>
+</head>
+<body>
+<input type="text" name="time" id="time" value="Initial time"/>
+<div id="panel">
+
+</div>
+
+<input type="text" name="content" id="content" />
+<input type="button" name="submit" value="submit" id="submit"/>
+
+<script type="text/javascript">
+var button = document.getElementById('submit');
+var panel = document.getElementById('panel');
+var content = document.getElementById('content');
+var time = document.getElementById('time');
+if(WebSocket)
+{
+    var ws = new WebSocket("ws://"+document.domain+":3636");
+    ws.onmessage = function(e)
+    {
+        data = e.data;
+        data = eval('(' + data + ')');
+        if(data)
+        {
+            switch(data.type)
+            {
+                case 'login':
+                    panel.innerHTML += '<p>User['+data.from_id+'] login '+data.time+' '+data.price+'</p>';
+			time.value = data.time;
+                    break;
+                case 'say':
+                    panel.innerHTML += '<p>User['+data.from_id+'] said: '+data.content+' '+data.price+'</p>';
+                    break;
+                case 'logout':
+                    panel.innerHTML += '<p>User['+data.from_id+'] logout '+data.time+'</p>';
+
+                    break;
+		case 'time':
+                    time.value = data.time;
+
+                    break;
+            }
+        }
+    };
+    button.onclick = function()
+    {
+        ws.send(content.value);
+        content.value = '';
+    };
+}
+else
+{
+	panel.innerHTML = '<b>This browser does not support WebSocket</b>';
+}
+</script>
+</body>
+</html>
