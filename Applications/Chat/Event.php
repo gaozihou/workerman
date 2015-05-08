@@ -14,6 +14,7 @@
 
 use \GatewayWorker\Lib\Gateway;
 use \GatewayWorker\Lib\Store;
+require_once '/var/www/task_manager/include/DbHandler.php';
 
 class Event
 {
@@ -44,6 +45,12 @@ class Event
             // 客户端登录 message格式: {type:login, name:xx, room_id:1} ，添加到客户端，广播给所有客户端xx进入聊天室
             case 'login':
             case 're_login':
+            	$db = new DbHandler();
+            	$api_key = $message_data['Authorization'];
+            	if(!$db->isValidApiKey($api_key))
+            	{
+            		Gateway::closeClient($client_id);
+            	}
                 // 判断是否有房间号
                 if(!isset($message_data['room_id']))
                 {
@@ -163,17 +170,6 @@ class Event
        $ret = $store->get($key);
        if(false === $ret)
        {
-           if(get_class($store) == 'Memcached')
-           {
-               if($store->getResultCode() == \Memcached::RES_NOTFOUND)
-               {
-                   return array();
-               }
-               else 
-               {
-                   throw new \Exception("getClientListFromRoom($room_id)->Store::instance('room')->get($key) fail " . $store->getResultMessage());
-               }
-           }
            return array();
        }
        return $ret;
@@ -187,43 +183,7 @@ class Event
    {
        $key = "ROOM_CLIENT_LIST-$room_id";
        $store = Store::instance('room');
-       // 存储驱动是memcached
-       if(get_class($store) == 'Memcached')
-       {
-           $cas = 0;
-           $try_count = 3;
-           while($try_count--)
-           {
-               $client_list = $store->get($key, null, $cas);
-               if(false === $client_list)
-               {
-                   if($store->getResultCode() == \Memcached::RES_NOTFOUND)
-                   {
-                       return array();
-                   }
-                   else
-                   {
-                        throw new \Exception("Memcached->get($key) return false and memcache errcode:" .$store->getResultCode(). " errmsg:" . $store->getResultMessage());
-                   }
-               }
-               if(isset($client_list[$client_id]))
-               {
-                   unset($client_list[$client_id]);
-                   if($store->cas($cas, $key, $client_list))
-                   {
-                       return $client_list;
-                   }
-               }
-               else 
-               {
-                   return true;
-               }
-           }
-           throw new \Exception("delClientFromRoom($room_id, $client_id)->Store::instance('room')->cas($cas, $key, \$client_list) fail" . $store->getResultMessage());
-       }
        // 存储驱动是memcache或者file
-       else
-       {
            $handler = fopen(__FILE__, 'r');
            flock($handler,  LOCK_EX);
            $client_list = $store->get($key);
@@ -235,7 +195,6 @@ class Event
                return $client_list;
            }
            flock($handler, LOCK_UN);
-       }
        return $client_list;
    }
    
@@ -250,62 +209,7 @@ class Event
        $store = Store::instance('room');
        // 获取所有所有房间的实际在线客户端列表，以便将存储中不在线用户删除
        $all_online_client_id = Gateway::getOnlineStatus();
-       // 存储驱动是memcached
-       if(get_class($store) == 'Memcached')
-       {
-       		echo "\nMemcached!\n";
-           $cas = 0;
-           $try_count = 3;
-           while($try_count--)
-           {
-               $client_list = $store->get($key, null, $cas);
-               if(false === $client_list)
-               {
-                   if($store->getResultCode() == \Memcached::RES_NOTFOUND)
-                   {
-                       $client_list = array();
-                   }
-                   else
-                   {
-                       throw new \Exception("Memcached->get($key) return false and memcache errcode:" .$store->getResultCode(). " errmsg:" . $store->getResultMessage());
-                   }
-               }
-               if(!isset($client_list[$client_id]))
-               {
-                   // 将存储中不在线用户删除
-                   if($all_online_client_id && $client_list)
-                   {
-                       $all_online_client_id = array_flip($all_online_client_id);
-                       $client_list = array_intersect_key($client_list, $all_online_client_id);
-                   }
-                   // 添加在线客户端
-                   $client_list[$client_id] = $client_name;
-                   // 原子添加
-                   if($store->getResultCode() == \Memcached::RES_NOTFOUND)
-                   {
-                       $store->add($key, $client_list);
-                   }
-                   // 置换
-                   else
-                   {
-                       $store->cas($cas, $key, $client_list);
-                   }
-                   if($store->getResultCode() == \Memcached::RES_SUCCESS)
-                   {
-                       return $client_list;
-                   }
-               }
-               else 
-               {
-                   return $client_list;
-               }
-           }
-           throw new \Exception("addClientToRoom($room_id, $client_id, $client_name)->cas($cas, $key, \$client_list) fail .".$store->getResultMessage());
-       }
        // 存储驱动是memcache或者file
-       else
-       {
-       	echo "\nMemcache!\n";
            $handler = fopen(__FILE__, 'r');
            flock($handler,  LOCK_EX);
            $client_list = $store->get($key);
@@ -324,7 +228,6 @@ class Event
                return $client_list;
            }
            flock($handler, LOCK_UN);
-       }
        return $client_list;
    }
 }

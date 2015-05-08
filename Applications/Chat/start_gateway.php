@@ -59,13 +59,7 @@ $gateway->onConnect = function($connection)
 {
     $connection->onWebSocketConnect = function($connection , $http_header)
     {
-    	$db = new DbHandler();
-    	$header = http_parse_headers($http_header);
-    	$api_key = $header['Authorization'];
-        if(!$db->isValidApiKey($api_key))
-        {
-            $connection->close();
-        }
+    	// Do nothing
     };
 };
 
@@ -74,7 +68,7 @@ if(!defined('GLOBAL_START'))
 {
     Worker::runAll();
 }
-
+/*
 function http_parse_headers($raw_headers)
 {
 	$headers = array();
@@ -114,4 +108,5 @@ function http_parse_headers($raw_headers)
 
 	return $headers;
 }
+*/
 

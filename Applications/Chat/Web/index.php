@@ -33,7 +33,7 @@
     	  if(reconnect == false)
     	  {
         	  // 登录
-    		  var login_data = JSON.stringify({"type":"login","client_name":name,"room_id":<?php echo isset($_GET['room_id']) ? $_GET['room_id'] : 1?>});
+    		  var login_data = JSON.stringify({"type":"login","Authorization":"e66da4a8108c3187a8ff9d6a53fc7b15","client_name":name,"room_id":<?php echo isset($_GET['room_id']) ? $_GET['room_id'] : 1?>});
     		  console.log("websocket握手成功，发送登录数据:"+login_data);
   		      ws.send(login_data);
     		  reconnect = true;
@@ -41,7 +41,7 @@
     	  else
     	  {
         	  // 断线重连
-        	  var relogin_data = JSON.stringify({"type":"re_login","client_name":name,"room_id":<?php echo isset($_GET['room_id']) ? $_GET['room_id'] : 1?>});
+        	  var relogin_data = JSON.stringify({"type":"re_login","Authorization":"e66da4a8108c3187a8ff9d6a53fc7b15","client_name":name,"room_id":<?php echo isset($_GET['room_id']) ? $_GET['room_id'] : 1?>});
     		  console.log("websocket握手成功，发送重连数据:"+relogin_data);
     		  ws.send(relogin_data);
     	  }
