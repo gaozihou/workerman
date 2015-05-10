@@ -50,6 +50,7 @@ class Event
             	if(!$db->isValidApiKey($api_key))
             	{
             		Gateway::closeClient($client_id);
+            		return;
             	}
                 // 判断是否有房间号
                 if(!isset($message_data['room_id']))
@@ -60,11 +61,12 @@ class Event
                 // 把房间号昵称放到session中
                 $room_id = $message_data['room_id'];
                 $client_name = htmlspecialchars($message_data['client_name']);
+                $user_id = $message_data['user_id'];
                 $_SESSION['room_id'] = $room_id;
                 $_SESSION['client_name'] = $client_name;
                 
                 // 存储到当前房间的客户端列表
-                $all_clients = self::addClientToRoom($room_id, $client_id, $client_name);
+                $all_clients = self::addClientToRoom($room_id, $client_id, $client_name, $user_id);
                 
                 // 整理客户端列表以便显示
                 $client_list = self::formatClientsData($all_clients);
@@ -95,6 +97,7 @@ class Event
                         'to_client_id'=>$message_data['to_client_id'],
                         'content'=>"<b>对你说: </b>".nl2br(htmlspecialchars($message_data['content'])),
                         'time'=>date('Y-m-d H:i:s'),
+                    	'price'=>self::getCurrentPriceFromRoom($_SESSION['room_id']),
                     );
                     Gateway::sendToClient($message_data['to_client_id'], json_encode($new_message));
                     $new_message['content'] = "<b>你对".htmlspecialchars($message_data['to_client_name'])."说: </b>".nl2br(htmlspecialchars($message_data['content']));
@@ -111,8 +114,38 @@ class Event
                     'to_client_id'=>'all',
                     'content'=>nl2br(htmlspecialchars($message_data['content'])),
                     'time'=>date('Y-m-d H:i:s'),
+                	'price'=>self::getCurrentPriceFromRoom($_SESSION['room_id']),
                 );
                 return Gateway::sendToAll(json_encode($new_message), $client_id_array);
+                
+                // Client side add new room
+            case 'add':
+            	$db = new DbHandler();
+            	$api_key = $message_data['Authorization'];
+            	if(!$db->isValidApiKey($api_key)){
+            		Gateway::closeClient($client_id);
+            		return;
+            	}
+            	$seller_id = $db->getUserId($api_key);
+            	$seller_name = $message_data['seller_name'];
+            	$image =  $message_data['image'];
+            	$description = $message_data['description'];
+            	$room_id = $message_data['room_id'];
+            	$name = $message_data['name'];
+            	$initial_price = $message_data['initial_price'];
+            	self::addRoom("none", -1, $name, $initial_price, $room_id, $description, 1, $seller_name, $seller_id, $image);
+            	Gateway::closeClient($client_id);
+            	return;
+            case 'request_rooms':
+            	$room_info = self::formatRoomsInfo(self::getRoomList());
+            	$new_message = array(
+            			'type'=>'say',
+            			'list'=>$room_info,
+            	);
+            	Gateway::sendToCurrentClient(json_encode($new_message));
+            	return;
+         	case 'close_client':
+            	return  Gateway::closeClient($client_id);
         }
    }
    
@@ -151,12 +184,37 @@ class Event
        $client_list = array();
        if($all_clients)
        {
-           foreach($all_clients as $tmp_client_id=>$tmp_name)
+           foreach($all_clients as $tmp_client_id=>$tmp_single_client)
            {
-               $client_list[] = array('client_id'=>$tmp_client_id, 'client_name'=>$tmp_name);
+               $client_list[] = array('client_id'=>$tmp_client_id, 'client_name'=>$tmp_single_client['user_name']);
            }
        }
        return $client_list;
+   }
+   
+   public static function formatRoomsInfo($room_list){
+   		$room_info = array();
+   		$store = Store::instance('room');
+   		if($room_list)
+   		{
+   			foreach($room_list as $tmp_room_id=>$tmp_condition)
+   			{
+   				$key = "ROOM_CLIENT_LIST-$tmp_room_id";
+   				$task_info = $store->get($key);
+   				$room_info[] = array('id'=>$tmp_room_id, 'name'=>$task_info['name'], 'curr_price'=>$task_info['curr_price'], 'status'=>$task_info['status'], 'image'=>$task_info['image'], 'seller_name'=>$task_info['seller_name']);
+   			}
+   		}
+   		return $room_info;
+   }
+   
+   public static function getCurrentPriceFromRoom($room_id){
+   		$key = "ROOM_CLIENT_LIST-$room_id";
+   		$store = Store::instance('room');
+   		$task_info = $store->get($key);
+   		if(false === $task_info['curr_price']){
+   			return 0;
+   		}
+   		return $task_info['curr_price'];
    }
    
    /**
@@ -167,12 +225,23 @@ class Event
    {
        $key = "ROOM_CLIENT_LIST-$room_id";
        $store = Store::instance('room');
-       $ret = $store->get($key);
-       if(false === $ret)
+       $task_info = $store->get($key);
+       if(false === $task_info['client_list'])
        {
            return array();
        }
-       return $ret;
+       return $task_info['client_list'];
+   }
+   
+   public static function getRoomList(){
+   		$key = "CURR_ROOM_LIST";
+   		$store = Store::instance('room');
+   		$room_list = $store->get($key);
+   		if(false === $room_list['rooms']){
+   			return array();
+   			echo hehe;
+   		}
+   		return $room_list['rooms'];
    }
    
    /**
@@ -186,16 +255,16 @@ class Event
        // 存储驱动是memcache或者file
            $handler = fopen(__FILE__, 'r');
            flock($handler,  LOCK_EX);
-           $client_list = $store->get($key);
-           if(isset($client_list[$client_id]))
+           $task_info = $store->get($key);
+           if(isset($task_info['client_list'][$client_id]))
            {
-               unset($client_list[$client_id]);
-               $ret = $store->set($key, $client_list);
+               unset($task_info['client_list'][$client_id]);
+               $ret = $store->set($key, $task_info);
                flock($handler, LOCK_UN);
-               return $client_list;
+               return $task_info['client_list'];
            }
            flock($handler, LOCK_UN);
-       return $client_list;
+       return $task_info['client_list'];
    }
    
    /**
@@ -203,7 +272,7 @@ class Event
     * @param int $client_id
     * @param string $client_name
     */
-   public static function addClientToRoom($room_id, $client_id, $client_name)
+   public static function addClientToRoom($room_id, $client_id, $client_name, $user_id)
    {
        $key = "ROOM_CLIENT_LIST-$room_id";
        $store = Store::instance('room');
@@ -212,22 +281,63 @@ class Event
        // 存储驱动是memcache或者file
            $handler = fopen(__FILE__, 'r');
            flock($handler,  LOCK_EX);
-           $client_list = $store->get($key);
-           if(!isset($client_list[$client_id]))
+           $task_info = $store->get($key);
+           if(!isset($task_info['client_list'][$client_id]))
            {
                // 将存储中不在线用户删除
-               if($all_online_client_id && $client_list)
+               if($all_online_client_id && $task_info['client_list'])
                {
                    $all_online_client_id = array_flip($all_online_client_id);
-                   $client_list = array_intersect_key($client_list, $all_online_client_id);
+                   $task_info['client_list'] = array_intersect_key($task_info['client_list'], $all_online_client_id);
                }
                // 添加在线客户端
-               $client_list[$client_id] = $client_name;
-               $ret = $store->set($key, $client_list);
+               $task_info['client_list'][$client_id]['user_name'] = $client_name;
+               $task_info['client_list'][$client_id]['user_id'] = $user_id;
+               $ret = $store->set($key, $task_info);
                flock($handler, LOCK_UN);
-               return $client_list;
+               return $task_info['client_list'];
            }
            flock($handler, LOCK_UN);
-       return $client_list;
+       return $task_info['client_list'];
    }
+   
+   // This function is for the initialization of the room
+    public static function addRoom($curr_uname, $curr_uid, $name, $initial_price, $room_id, $description, $status, $seller_name, $seller_id, $image){
+    	
+    	$key = "CURR_ROOM_LIST";
+    	$store = Store::instance('room');
+    	$handler = fopen(__FILE__, 'r');
+    	flock($handler,  LOCK_EX);
+    	$room_list = $store->get($key);
+    	if(!isset($room_list['curr_assign'])){
+    		$room_list['curr_assign'] = 1;
+    	}
+    	$curr_room = $room_list['curr_assign'];
+    	$room_list['rooms'][$curr_room] = true;
+    	$room_list['curr_assign'] = $room_list['curr_assign'] + 1;
+    	$store->set($key, $room_list);
+    	
+   		$key = "ROOM_CLIENT_LIST-$curr_room";
+   		$task_info['name'] = $name;
+   		$task_info['curr_price'] = $initial_price;
+   		$task_info['curr_uname'] = $curr_uname;
+   		$task_info['curr_uid'] = $curr_uid;
+   		$task_info['description'] = $description;
+   		$task_info['status'] = $status;
+   		$task_info['seller_name'] = $seller_name;
+   		$task_info['seller_id'] = $seller_id;
+   		$task_info['image'] = $image;
+   		$store->set($key, $task_info);
+   		
+   		
+   	}
+   
 }
+
+
+
+
+
+
+
+
