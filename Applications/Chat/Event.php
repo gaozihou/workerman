@@ -72,7 +72,13 @@ class Event
                 $client_list = self::formatClientsData($all_clients);
                 
                 // 转播给当前房间的所有客户端，xx进入聊天室 message {type:login, client_id:xx, name:xx} 
-                $new_message = array('type'=>$message_data['type'], 'client_id'=>$client_id, 'client_name'=>htmlspecialchars($client_name), 'client_list'=>$client_list, 'time'=>date('Y-m-d H:i:s'));
+                $new_message = array(
+                		'type'=>$message_data['type'], 
+                		'client_id'=>$client_id,
+                		 'client_name'=>htmlspecialchars($client_name), 
+                		'client_list'=>$client_list, 
+                		'time'=>date('Y-m-d H:i:s'),
+                );
                 $client_id_array = array_keys($all_clients);
                 Gateway::sendToAll(json_encode($new_message), $client_id_array);
                 return;
@@ -86,6 +92,7 @@ class Event
                 }
                 $room_id = $_SESSION['room_id'];
                 $client_name = $_SESSION['client_name'];
+                self::setCurrentRoomPrice($_SESSION['room_id'], $message_data['content']);
                 
                 // 私聊
                 if($message_data['to_client_id'] != 'all')
@@ -114,6 +121,7 @@ class Event
                     'to_client_id'=>'all',
                     'content'=>nl2br(htmlspecialchars($message_data['content'])),
                     'time'=>date('Y-m-d H:i:s'),
+                	
                 	'price'=>self::getCurrentPriceFromRoom($_SESSION['room_id']),
                 );
                 return Gateway::sendToAll(json_encode($new_message), $client_id_array);
@@ -215,6 +223,18 @@ class Event
    			return 0;
    		}
    		return $task_info['curr_price'];
+   }
+   
+   public static function setCurrentRoomPrice($room_id, $price){
+   		$key = "ROOM_CLIENT_LIST-$room_id";
+   		$store = Store::instance('room');
+   		$task_info = $store->get($key);
+   		if(false === $task_info['curr_price']){
+   			$task_info['curr_price'] = 0;
+   		}else{
+   			$task_info['curr_price'] = $price;
+   		}
+   		$store->set($key, $task_info);
    }
    
    /**
