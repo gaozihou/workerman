@@ -72,12 +72,21 @@ class Event
                 $client_list = self::formatClientsData($all_clients);
                 
                 // 转播给当前房间的所有客户端，xx进入聊天室 message {type:login, client_id:xx, name:xx} 
+                $task_info = self::getRoom($_SESSION['room_id']);
                 $new_message = array(
                 		'type'=>$message_data['type'], 
                 		'client_id'=>$client_id,
-                		 'client_name'=>htmlspecialchars($client_name), 
+                		'client_name'=>htmlspecialchars($client_name), 
                 		'client_list'=>$client_list, 
                 		'time'=>date('Y-m-d H:i:s'),
+                		'price'=>self::getCurrentPriceFromRoom($_SESSION['room_id']),
+                		'description'=>$task_info['description'],
+                		'seller_name'=>$task_info['seller_name'],
+                		'seller_id'=>$task_info['seller_id'],
+                		'status'=>$task_info['status'],
+                		'name'=>$task_info['name'],
+                		'curr_uname'=>$task_info['curr_uname'],
+                		'curr_uid'=>$task_info['curr_uid'],
                 );
                 $client_id_array = array_keys($all_clients);
                 Gateway::sendToAll(json_encode($new_message), $client_id_array);
@@ -121,7 +130,6 @@ class Event
                     'to_client_id'=>'all',
                     'content'=>nl2br(htmlspecialchars($message_data['content'])),
                     'time'=>date('Y-m-d H:i:s'),
-                	
                 	'price'=>self::getCurrentPriceFromRoom($_SESSION['room_id']),
                 );
                 return Gateway::sendToAll(json_encode($new_message), $client_id_array);
@@ -223,6 +231,13 @@ class Event
    			return 0;
    		}
    		return $task_info['curr_price'];
+   }
+   
+   public static function getRoom($room_id){
+   	$key = "ROOM_CLIENT_LIST-$room_id";
+   	$store = Store::instance('room');
+   	$task_info = $store->get($key);
+    return $task_info;
    }
    
    public static function setCurrentRoomPrice($room_id, $price){
