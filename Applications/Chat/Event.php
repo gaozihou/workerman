@@ -72,7 +72,7 @@ class Event
 						break;
 						
 					case self::$FINISHED:
-						if((time() - $task_info['start_time'] > 86400) || !isset($task_info['bid_list'])){
+						if((time() - $task_info['start_time'] > 86400 * 7) || !isset($task_info['bid_list'])){
 							self::deleteRoom($tmp_room_id);
 						}
 						break;
