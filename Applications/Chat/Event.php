@@ -64,7 +64,9 @@ class Event
 						break;
 						
 					case self::$FINISHED:
-						
+						if((time() - $task_info['start_time'] > 86400)){
+							self::deleteRoom($tmp_room_id);
+						}
 						break;
 						
 					default:
@@ -303,6 +305,8 @@ class Event
    public static function setCurrentRoomPrice($room_id, $price){
    		$key = "ROOM_CLIENT_LIST-$room_id";
    		$store = Store::instance('room');
+   		$handler = fopen(__FILE__, 'r');
+   		flock($handler,  LOCK_EX);
    		$task_info = $store->get($key);
    		if(false === $task_info['curr_price']){
    			$task_info['curr_price'] = 0;
@@ -310,6 +314,7 @@ class Event
    			$task_info['curr_price'] = $price;
    		}
    		$store->set($key, $task_info);
+   		flock($handler, LOCK_UN);
    }
    
    /**
@@ -337,6 +342,19 @@ class Event
    			echo hehe;
    		}
    		return $room_list['rooms'];
+   }
+   
+   public static function deleteRoom($room_id){
+   		$key = "CURR_ROOM_LIST";
+   		$store = Store::instance('room');
+   		$handler = fopen(__FILE__, 'r');
+   		flock($handler,  LOCK_EX);
+   		$room_list = $store->get($key);
+   		if(isset($room_list['rooms'][$room_id])){
+   			unset($room_list['rooms'][$room_id]);
+   		}
+   		$store->set($key, $room_list);
+   		flock($handler, LOCK_UN);
    }
    
    /**
@@ -426,7 +444,7 @@ class Event
    		$task_info['start_time'] = time() + $start_time;
    		$task_info['time_left'] = self::$TOTAL_TIME ;
    		$store->set($key, $task_info);
-   		
+   		flock($handler, LOCK_UN);
    		echo $task_info['time_left']."\n";
    	}
    
