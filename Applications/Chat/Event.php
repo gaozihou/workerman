@@ -18,6 +18,62 @@ require_once '/var/www/task_manager/include/DbHandler.php';
 
 class Event
 {
+	public static $NOT_STARTED = 1;
+	public static $BIDDING = 2;
+	public static $FINISHED = 3;
+	private static $TOTAL_TIME = 60;
+	
+	public static function onTimeCount(){
+		
+		$room_list = self::getRoomList();
+		$store = Store::instance('room');
+		if($room_list)
+		{
+			foreach($room_list as $tmp_room_id=>$tmp_condition)
+			{
+				$key = "ROOM_CLIENT_LIST-$tmp_room_id";
+				$task_info = $store->get($key);
+				
+				switch($task_info['status']){
+					
+					case self::$NOT_STARTED:
+						if($task_info['start_time'] <= time()){
+							$task_info['status'] = self::$BIDDING;
+							$store->set($key, $task_info);
+							$client_id_array = array_keys($task_info['client_list']);
+							$new_message = array(
+									'type'=>'start',
+							);
+							Gateway::sendToAll(json_encode($new_message), $client_id_array);
+						}
+						break;
+						
+					case self::$BIDDING:
+						if($task_info['time_left']>0){
+							$task_info['time_left']--;
+							$store->set($key, $task_info);
+						}else{
+							$task_info['status'] = self::$FINISHED;
+							$store->set($key, $task_info);
+							$client_id_array = array_keys($task_info['client_list']);
+							$new_message = array(
+									'type'=>'end',
+							);
+							Gateway::sendToAll(json_encode($new_message), $client_id_array);
+						}
+						break;
+						
+					case self::$FINISHED:
+						
+						break;
+						
+					default:
+						break;
+				}
+			}
+		}
+		
+	}
    
    /**
     * 有消息时
@@ -87,9 +143,12 @@ class Event
                 		'name'=>$task_info['name'],
                 		'curr_uname'=>$task_info['curr_uname'],
                 		'curr_uid'=>$task_info['curr_uid'],
+                		'start_time'=>date('Y-m-d H:i:s', $task_info['start_time']),
+                		'time_left'=>$task_info['time_left'],
                 );
                 $client_id_array = array_keys($all_clients);
                 Gateway::sendToAll(json_encode($new_message), $client_id_array);
+                echo $task_info['time_left']."\n";
                 return;
                 
             // 客户端发言 message: {type:say, to_client_id:xx, content:xx}
@@ -149,7 +208,8 @@ class Event
             	$room_id = $message_data['room_id'];
             	$name = $message_data['name'];
             	$initial_price = $message_data['initial_price'];
-            	self::addRoom("none", -1, $name, $initial_price, $room_id, $description, 1, $seller_name, $seller_id, $image);
+            	$start_time = $message_data['later'];
+            	self::addRoom("none", -1, $name, $initial_price, $room_id, $description, self::$NOT_STARTED, $seller_name, $seller_id, $image, $start_time);
             	Gateway::closeClient($client_id);
             	return;
             case 'request_rooms':
@@ -337,7 +397,8 @@ class Event
    }
    
    // This function is for the initialization of the room
-    public static function addRoom($curr_uname, $curr_uid, $name, $initial_price, $room_id, $description, $status, $seller_name, $seller_id, $image){
+    public static function addRoom($curr_uname, $curr_uid, $name, $initial_price, $room_id, 
+    		$description, $status, $seller_name, $seller_id, $image, $start_time){
     	
     	$key = "CURR_ROOM_LIST";
     	$store = Store::instance('room');
@@ -362,9 +423,11 @@ class Event
    		$task_info['seller_name'] = $seller_name;
    		$task_info['seller_id'] = $seller_id;
    		$task_info['image'] = $image;
+   		$task_info['start_time'] = time() + $start_time;
+   		$task_info['time_left'] = self::$TOTAL_TIME ;
    		$store->set($key, $task_info);
    		
-   		
+   		echo $task_info['time_left']."\n";
    	}
    
 }
