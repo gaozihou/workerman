@@ -147,6 +147,7 @@ class Event
                 		'curr_uid'=>$task_info['curr_uid'],
                 		'start_time'=>date('Y-m-d H:i:s', $task_info['start_time']),
                 		'time_left'=>$task_info['time_left'],
+                		'user_id'=>$user_id,
                 );
                 $client_id_array = array_keys($all_clients);
                 Gateway::sendToAll(json_encode($new_message), $client_id_array);
