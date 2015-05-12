@@ -58,13 +58,21 @@ class Event
 							$client_id_array = array_keys($task_info['client_list']);
 							$new_message = array(
 									'type'=>'end',
+									'curr_uname'=>$task_info['curr_uname'],
+									'curr_uid'=>$task_info['curr_uid'],
+									'initial_price'=>$task_info['initial_price'],
 							);
 							Gateway::sendToAll(json_encode($new_message), $client_id_array);
+							
+							$key = "DB-QUEUE";
+							$db_queue = $store->get($key);
+							$db_queue[] = $task_info;
+							$store->set($key, $db_queue);
 						}
 						break;
 						
 					case self::$FINISHED:
-						if((time() - $task_info['start_time'] > 86400)){
+						if((time() - $task_info['start_time'] > 86400) || !isset($task_info['bid_list'])){
 							self::deleteRoom($tmp_room_id);
 						}
 						break;
@@ -73,8 +81,30 @@ class Event
 						break;
 				}
 			}
-		}
+		}	
+	}
+	
+	public static function onDbGatewayStart(){
+		$store = Store::instance('room');
+		$key = "DB-QUEUE";
+		$store->set($key, array());
+	}
+	
+	public static function onDbTimerCount(){
+		$store = Store::instance('room');
+		$key = "DB-QUEUE";
+		$db_queue = $store->get($key);
+		$store->set($key, array());
 		
+		foreach($db_queue as $tmp_queue_id=>$task_info)
+		{
+			$db = new DbHandler();
+			$result = ($db->postItem($task_info['seller_id'], $task_info['name'], $task_info['description'], "new",
+					"Other", 60, 0, $task_info['initial_price'], $task_info['image'], $task_info['seller_name'], 1));
+			if($task_info['curr_uid'] != -1){
+				$db->updatePrice($task_info['curr_uid'],$task_info['curr_price'], $result);
+			}
+		}
 	}
    
    /**
@@ -137,7 +167,7 @@ class Event
                 		'client_name'=>htmlspecialchars($client_name), 
                 		'client_list'=>$client_list, 
                 		'time'=>date('Y-m-d H:i:s'),
-                		'price'=>self::getCurrentPriceFromRoom($_SESSION['room_id']),
+                		'price'=>$task_info['curr_price'],
                 		'description'=>$task_info['description'],
                 		'seller_name'=>$task_info['seller_name'],
                 		'seller_id'=>$task_info['seller_id'],
@@ -145,9 +175,11 @@ class Event
                 		'name'=>$task_info['name'],
                 		'curr_uname'=>$task_info['curr_uname'],
                 		'curr_uid'=>$task_info['curr_uid'],
+                		'initial_price'=>$task_info['initial_price'],
                 		'start_time'=>date('Y-m-d H:i:s', $task_info['start_time']),
                 		'time_left'=>$task_info['time_left'],
                 		'user_id'=>$user_id,
+                		'bid_list'=>$task_info['bid_list'],
                 );
                 $client_id_array = array_keys($all_clients);
                 Gateway::sendToAll(json_encode($new_message), $client_id_array);
@@ -163,24 +195,18 @@ class Event
                 }
                 $room_id = $_SESSION['room_id'];
                 $client_name = $_SESSION['client_name'];
-                self::setCurrentRoomPrice($_SESSION['room_id'], $message_data['content']);
                 
-                // 私聊
-                if($message_data['to_client_id'] != 'all')
-                {
-                    $new_message = array(
-                        'type'=>'say',
-                        'from_client_id'=>$client_id, 
-                        'from_client_name' =>$client_name,
-                        'to_client_id'=>$message_data['to_client_id'],
-                        'content'=>"<b>对你说: </b>".nl2br(htmlspecialchars($message_data['content'])),
-                        'time'=>date('Y-m-d H:i:s'),
-                    	'price'=>self::getCurrentPriceFromRoom($_SESSION['room_id']),
-                    );
-                    Gateway::sendToClient($message_data['to_client_id'], json_encode($new_message));
-                    $new_message['content'] = "<b>你对".htmlspecialchars($message_data['to_client_name'])."说: </b>".nl2br(htmlspecialchars($message_data['content']));
-                    return Gateway::sendToCurrentClient(json_encode($new_message));
-                }
+                $task_info = self::getRoom($_SESSION['room_id']);
+                $task_info['curr_price'] = $message_data['content'];
+                $task_info['curr_uid'] = $task_info['client_list'][$client_id]['user_id'];
+                $task_info['curr_uname'] = $task_info['client_list'][$client_id]['user_name'];
+                $task_info['bid_list'][] = array(
+                		'user_id'=> $task_info['curr_uid'],
+                		'user_name'=>$task_info['curr_uname'],
+                		'price'=>$task_info['curr_price'],
+                		'time'=>date('Y-m-d H:i:s'),
+                );
+                self::setRoom($_SESSION['room_id'], $task_info);
                 
                 // 向大家说
                 $all_clients = self::getClientListFromRoom($_SESSION['room_id']);
@@ -192,7 +218,7 @@ class Event
                     'to_client_id'=>'all',
                     'content'=>nl2br(htmlspecialchars($message_data['content'])),
                     'time'=>date('Y-m-d H:i:s'),
-                	'price'=>self::getCurrentPriceFromRoom($_SESSION['room_id']),
+                	'price'=>$task_info['curr_price'],
                 );
                 return Gateway::sendToAll(json_encode($new_message), $client_id_array);
                 
@@ -212,7 +238,8 @@ class Event
             	$name = $message_data['name'];
             	$initial_price = $message_data['initial_price'];
             	$start_time = $message_data['later'];
-            	self::addRoom("none", -1, $name, $initial_price, $room_id, $description, self::$NOT_STARTED, $seller_name, $seller_id, $image, $start_time);
+            	self::addRoom("none", -1, $name, $initial_price, $room_id, $description, self::$NOT_STARTED, 
+            			$seller_name, $seller_id, $image, $start_time);
             	Gateway::closeClient($client_id);
             	return;
             case 'request_rooms':
@@ -301,6 +328,12 @@ class Event
    	$store = Store::instance('room');
    	$task_info = $store->get($key);
     return $task_info;
+   }
+   
+   public static function setRoom($room_id, $task_info){
+   	$key = "ROOM_CLIENT_LIST-$room_id";
+   	$store = Store::instance('room');
+   	$store->set($key, $task_info);
    }
    
    public static function setCurrentRoomPrice($room_id, $price){
@@ -444,6 +477,8 @@ class Event
    		$task_info['image'] = $image;
    		$task_info['start_time'] = time() + $start_time;
    		$task_info['time_left'] = self::$TOTAL_TIME ;
+   		$task_info['bid_list'] = array();
+   		$task_info['initial_price'] = $initial_price;
    		$store->set($key, $task_info);
    		flock($handler, LOCK_UN);
    		echo $task_info['time_left']."\n";
