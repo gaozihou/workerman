@@ -68,6 +68,8 @@ class Event
 							$db_queue = $store->get($key);
 							$db_queue[] = $task_info;
 							$store->set($key, $db_queue);
+							
+							
 						}
 						break;
 						
@@ -104,7 +106,45 @@ class Event
 			if($task_info['curr_uid'] != -1){
 				$db->updatePrice($task_info['curr_uid'],$task_info['curr_price'], $result);
 			}
+			// GCM Push
+			if($task_info['curr_uid'] == -1){
+				self::pushMessageToSpecifiedUsers("Your live auction is unsuccessful. Better next time!",
+						array($task_info['seller_id']=>true,));
+			}else{
+				self::pushMessageToSpecifiedUsers("Your live auction is successful! Congratulations!",
+						array(
+								$task_info['seller_id']=>true,
+								$task_info['curr_uid']=>true,
+						));
+			}
 		}
+	}
+	
+	public static function onSlowTimerCount(){
+		$db = new DbHandler();
+		$result = $db -> getEndedActiveTask();
+		if($result != NULL){
+			while($tmp = $result -> fetch_assoc()){
+				if($tmp["buyer_id"] == NULL){
+					$db -> setBidFinished($tmp["id"]);
+					self::pushMessageToSpecifiedUsers("Your item: ".$tmp["name"]." times out, no body buy it. Please try again!", 
+							array($tmp["user_id"]=>true, ));
+				}else{
+					$db -> setBidFinished($tmp["id"]);
+					self::pushMessageToSpecifiedUsers("Your item: ".$tmp["name"]." successhully sold with price of ".$tmp["current_price"],
+							array($tmp["user_id"]=>true, ));
+					$usersRelated = $db ->getSpecificUserBuy($tmp["id"]);
+					$user_list = array();
+					while($tmpUser = $usersRelated -> fetch_assoc()){
+						$user_list[$tmpUser["user_id"]] = true;
+					}
+					self::pushMessageToSpecifiedUsers("Item: ".$tmp["name"]." is sold out to buyer ".$tmp["buyer_name"]." with price of ".$tmp["current_price"],
+							 $user_list);
+				}
+			}
+		}
+		
+		
 	}
    
    /**
@@ -482,6 +522,60 @@ class Event
    		$store->set($key, $task_info);
    		flock($handler, LOCK_UN);
    		echo $task_info['time_left']."\n";
+   	}
+   	
+   	public static function pushMessageToSpecifiedUsers($rawMessage, $user_ids){
+   		
+   		echo "This is the time that start push: ".(microtime(true) * 1000);
+   		
+   		$message = $rawMessage;
+   		$messageToSend = array("Notice" => $message);
+   		$registration_ids = array();
+   		 
+   		$db = new DbHandler();
+   		$result = $db->getAllGCMIds();
+   		while($row = $result->fetch_assoc()){
+   			if(isset($user_ids[$row['user_id']])){
+   				array_push($registration_ids, $row['registration_id']);
+   			}
+   		}
+   		// Set POST variables
+   		$url = 'https://android.googleapis.com/gcm/send';
+   		 
+   		$fields = array(
+   				'registration_ids' => $registration_ids,
+   				'data' => $messageToSend,
+   		);
+   		$headers = array(
+   				'Authorization: key=AIzaSyDdZD8LfeHc3qRHTwgJnXH1ccD4WqiKtNM',
+   				'Content-Type: application/json'
+   		);
+   	
+   		// Open connection
+   		$ch = curl_init();
+   		 
+   		// Set the url, number of POST vars, POST data
+   		curl_setopt($ch, CURLOPT_URL, $url);
+   		curl_setopt($ch, CURLOPT_POST, true);
+   		curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+   		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+   		 
+   		// Disabling SSL Certificate support temporarly
+   		curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+   		curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($fields));
+   		 
+   		// Execute post
+   		$googleResult = curl_exec($ch);
+   		if ($googleResult === FALSE) {
+   			die('Curl failed: ' . curl_error($ch));
+   		}
+   		 
+   		// Close connection
+   		curl_close($ch);
+   		
+   		echo "This is the time that end push: ".(microtime(true) * 1000);
+   		
+   		return $googleResult;
    	}
    
 }

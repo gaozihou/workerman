@@ -39,7 +39,7 @@ $gateway->pingInterval = 0;
 $gateway->onWorkerStart = function($gateway)
 {
 	Event::onDbGatewayStart();
-	$time_interval = 1;
+	$time_interval = 2;
 	\Workerman\Lib\Timer::add($time_interval, function()
 	{
 		Event::onDbTimerCount();
