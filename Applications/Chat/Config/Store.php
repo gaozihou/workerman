@@ -1,23 +1,11 @@
+# COMP4521
+# ZHOU Xutong    20091184    xzhouaf@connect.ust.hk
+# GAO Zihou          20090130    zgao@connect.ust.hk
+
 <?php 
-/**
- * This file is part of workerman.
- *
- * Licensed under The MIT License
- * For full copyright and license information, please see the MIT-LICENSE.txt
- * Redistributions of files must retain the above copyright notice.
- *
- * @author walkor<walkor@workerman.net>
- * @copyright walkor<walkor@workerman.net>
- * @link http://www.workerman.net/
- * @license http://www.opensource.org/licenses/mit-license.php MIT License
- */
+
 namespace Config;
 
-/**
- * 存储配置
- * 注意生产环境使用$driver = self::DRIVER_MC，具体参考applications/Demo/README.md
- * @author walkor
- */
 class Store
 {
     // 使用文件存储，注意使用文件存储无法支持workerman分布式部署
