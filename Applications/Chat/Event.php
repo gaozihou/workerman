@@ -1,11 +1,11 @@
 
 
 <?php
-
-// COMP4521
-// ZHOU Xutong    20091184    xzhouaf@connect.ust.hk
-// GAO Zihou          20090130    zgao@connect.ust.hk
-
+/**
+ * COMP4521
+ * ZHOU Xutong    20091184    xzhouaf@connect.ust.hk
+ * GAO Zihou          20090130    zgao@connect.ust.hk
+ */
 use \GatewayWorker\Lib\Gateway;
 use \GatewayWorker\Lib\Store;
 require_once '/var/www/task_manager/include/DbHandler.php';
